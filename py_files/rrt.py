@@ -13,7 +13,6 @@ class Vertex:
         self.neighbors = []
 
 
-
 class RRT:
     def __init__(self, img):
         self.img = img
@@ -40,7 +39,7 @@ class RRT:
         # self.width, self.height
         x = np.random.uniform(0, self.img.width)
         y = np.random.uniform(0, self.img.height)
-        return np.array([x,y])
+        return np.array([x, y])
 
     def _extend(self, x, delta):
         x_near = self.nearest_neighbor(x)
@@ -62,6 +61,8 @@ class RRT:
             dist[v] = float("inf")
             prev[v] = None
             Q.append(v)
+
+        print("Len of Q: ", len(Q))
 
         dist[self.T[0]] = 0
 
