@@ -31,7 +31,7 @@ class Run:
         # TODO identify good particle filter parameters
         # world_map, sd_dst, sd_dir, sd_son, num_particles, init_x, init_y, init_theta
         self.pf = particle_filter.ParticleFilter(
-            self.mapJ, 1000, 0.3, 0.01, 0.15)
+            self.mapJ, 1000, 0.3, 0.05, 0.15)
 
         self.joint_angles = np.zeros(7)
 
@@ -354,7 +354,7 @@ class Run:
             for v in self.rrt.T:                # Display full map
                 for u in v.neighbors:
                     self.map.draw_line(
-                        (v.state[0], v.state[1]), (u.state[0], u.state[1]), (0, 0, 0))
+                        (v.state[0], v.state[1]), (u.state[0], u.state[1]), (255, 0, 0))
             for idx in range(0, len(path)-1):   # Display map with shortest path
                 self.map.draw_line((path[idx].state[0], path[idx].state[1]), (
                     path[idx+1].state[0], path[idx+1].state[1]), (0, 255, 0))
@@ -373,6 +373,7 @@ class Run:
             self.odometry.y = x_init[1] / 100.0 - 2
             self.odometry.theta = 0
             base_speed = 100
+            pf_ind = 0
 
             for p in path:
                 goal_x = p.state[0] / 100.0
@@ -388,24 +389,28 @@ class Run:
                         # update and send odometry to pf and assess particles
                         self.odometry.update(
                             state.leftEncoderCounts, state.rightEncoderCounts)
-                        self.pf.move_by(self.odometry.x,
-                                        self.odometry.y, self.odometry.theta)
-                        self.pf.measure(sonar_d)
 
                         # get particle with highest probability
-                        pf_estimate = self.pf.estimate()
+                        pf_ind += 1
+                        if pf_ind == 10:
+                            self.pf.move_by(self.odometry.x,
+                                            self.odometry.y, self.odometry.theta)
+                            self.pf.measure(sonar_d)
+                            pf_ind = 0
+                            pf_estimate = self.pf.estimate()
+                            self.virtual_create.set_pose(
+                                (pf_estimate.x, pf_estimate.y, 0.1), pf_estimate.theta)
+                            point_cloud = []
+                            for p in self.pf._particles:
+                                point_cloud.append(p.x)
+                                point_cloud.append(p.y)
+                                point_cloud.append(0.1)
+                                point_cloud.append(p.theta)
+                            self.virtual_create.set_point_cloud(point_cloud)
+
                         best_estimate_x = self.odometry.x
                         best_estimate_y = self.odometry.y
                         best_estimate_theta = self.odometry.theta
-                        self.virtual_create.set_pose(
-                            (pf_estimate.x, pf_estimate.y, 0.1), pf_estimate.theta)
-                        point_cloud = []
-                        for p in self.pf._particles:
-                            point_cloud.append(p.x)
-                            point_cloud.append(p.y)
-                            point_cloud.append(0.1)
-                            point_cloud.append(p.theta)
-                        self.virtual_create.set_point_cloud(point_cloud)
 
                         goal_theta = math.atan2(
                             goal_y - best_estimate_y, goal_x - best_estimate_x)
@@ -425,8 +430,12 @@ class Run:
                         # print("[{},{},{}]".format(self.odometry.x, self.odometry.y, math.degrees(self.odometry.theta)))
 
                         #distance = math.sqrt(math.pow(goal_x - best_estimate_x, 2) + math.pow(goal_y - best_estimate_y, 2))
-                        if distance < 0.05:
+                        if distance < 0.01:
                             break
+
+            self.create.drive_direct(0, 0)
+            while(1):
+                pass
 
             ##########################
             ## Place Glass on Shelf ##
