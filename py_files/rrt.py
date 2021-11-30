@@ -53,6 +53,13 @@ class RRT:
             x_near.neighbors.append(self.T[-1])
 
     def shortest_path(self, goal):
+
+        goal_vertex = Vertex(goal)
+
+        x_near = self.nearest_neighbor(goal_vertex.state)
+        self.T.append(goal_vertex)
+        x_near.neighbors.append(self.T[-1])
+
         dist = dict()
         prev = dict()
         Q = []
@@ -89,7 +96,7 @@ class RRT:
 
         # find solution
         S = []
-        u = goal
+        u = goal_vertex
         while prev[u] is not None:
             S.insert(0, u)
             u = prev[u]

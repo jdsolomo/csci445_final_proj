@@ -23,8 +23,10 @@ class Run:
         self.rrt = rrt.RRT(self.map)
 
         # TODO identify good PID controller gains
+        self.pidDistance = pid_controller.PIDController(
+            1000, 0, 50, [0, 0], [-200, 200], is_angle=False)
         self.pidTheta = pid_controller.PIDController(
-            200, 0, 100, [-10, 10], [-50, 50], is_angle=True)
+            300, 5, 50, [-10, 10], [-200, 200], is_angle=True)
         pos_init = self.create.sim_get_position()
         # TODO identify good particle filter parameters
         # world_map, sd_dst, sd_dir, sd_son, num_particles, init_x, init_y, init_theta
@@ -91,8 +93,9 @@ class Run:
     #                     old_y, self.odometry.theta - old_theta)
 
     def visualize(self):
-        x, y, theta = self.pf.estimate()
-        self.virtual_create.set_pose((x, y, 0.1), theta)
+        best_particle = self.pf.estimate()
+        self.virtual_create.set_pose(
+            (best_particle.x, best_particle.y, 0.1), best_particle.theta)
         data = []
         for particle in self.pf._particles:
             data.extend([particle.x, particle.y, 0.1, particle.theta])
@@ -341,13 +344,9 @@ class Run:
             print("Generating Map...")
             # TODO: get actual goal position (1.0738 m away from robot)
             K = 5000
-            delta = 5
+            delta = 10
             self.rrt.build(x_init, K, delta)            # build map
-            x_goal = self.rrt.nearest_neighbor((150, 91))
-            # # add goal position to map
-            # self.rrt.T.append(rrt.Vertex(x_goal))
-            # x_near = self.rrt.nearest_neighbor(x_goal)  #
-            # x_near.neighbors.append(self.rrt.T[-1])     #
+            x_goal = [150, 91]
             # Generate shortest path with Dijkstra's
             path = self.rrt.shortest_path(x_goal)
 
@@ -371,38 +370,61 @@ class Run:
 
             # TODO these need to be adjusted based on starting position
             self.odometry.x = x_init[0] / 100.0
-            self.odometry.y = x_init[1] / 100.0
-            self.odometry.theta = math.pi / 2
+            self.odometry.y = x_init[1] / 100.0 - 2
+            self.odometry.theta = 0
             base_speed = 100
 
             for p in path:
                 goal_x = p.state[0] / 100.0
-                goal_y = 3.35 - p.state[1] / 100.0
-                print(goal_x, goal_y)
+                goal_y = (300 - p.state[1]) / 100.0
+                print("*************NEW GOAL*************")
                 while True:
+                    print("Goal:", goal_x, goal_y, "   Current:",
+                          self.odometry.x, self.odometry.y)
                     state = self.create.update()
                     if state is not None:
-                        sonar_d = self.sonar.get_distance()
+                        sonar_d = self.sonar.get_distance()  # get sonar reading
+
+                        # update and send odometry to pf and assess particles
                         self.odometry.update(
                             state.leftEncoderCounts, state.rightEncoderCounts)
                         self.pf.move_by(self.odometry.x,
                                         self.odometry.y, self.odometry.theta)
                         self.pf.measure(sonar_d)
-                        best_estimate = self.particle_filter.estimate()
+
+                        # get particle with highest probability
+                        pf_estimate = self.pf.estimate()
+                        best_estimate_x = self.odometry.x
+                        best_estimate_y = self.odometry.y
+                        best_estimate_theta = self.odometry.theta
                         self.virtual_create.set_pose(
-                            (best_estimate.x, best_estimate.y, 0.1), best_estimate.theta)
+                            (pf_estimate.x, pf_estimate.y, 0.1), pf_estimate.theta)
+                        point_cloud = []
+                        for p in self.pf._particles:
+                            point_cloud.append(p.x)
+                            point_cloud.append(p.y)
+                            point_cloud.append(0.1)
+                            point_cloud.append(p.theta)
+                        self.virtual_create.set_point_cloud(point_cloud)
+
                         goal_theta = math.atan2(
-                            goal_y - best_estimate.y, goal_x - best_estimate.x)
-                        theta = math.atan2(math.sin(self.best_estimate.theta), math.cos(
-                            self.best_estimate.theta))
+                            goal_y - best_estimate_y, goal_x - best_estimate_x)
+                        theta = math.atan2(
+                            math.sin(best_estimate_theta), math.cos(best_estimate_theta))
                         output_theta = self.pidTheta.update(
-                            self.best_estimate.theta, goal_theta, self.time.time())
-                        self.create.drive_direct(
-                            int(base_speed+output_theta), int(base_speed-output_theta))
-                        # print("[{},{},{}]".format(self.odometry.x, self.odometry.y, math.degrees(self.odometry.theta)))
+                            best_estimate_theta, goal_theta, self.time.time())
 
                         distance = math.sqrt(
-                            math.pow(goal_x - self.best_estimate.x, 2) + math.pow(goal_y - self.best_estimate.y, 2))
+                            math.pow(goal_x - self.odometry.x, 2) + math.pow(goal_y - self.odometry.y, 2))
+                        output_distance = self.pidDistance.update(
+                            0, distance, self.time.time())
+
+                        # self.create.drive_direct(int(base_speed), int(base_speed))
+                        self.create.drive_direct(
+                            int(output_distance+output_theta), int(output_distance-output_theta))
+                        # print("[{},{},{}]".format(self.odometry.x, self.odometry.y, math.degrees(self.odometry.theta)))
+
+                        #distance = math.sqrt(math.pow(goal_x - best_estimate_x, 2) + math.pow(goal_y - best_estimate_y, 2))
                         if distance < 0.05:
                             break
 

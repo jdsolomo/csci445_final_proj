@@ -70,7 +70,6 @@ class ParticleFilter:
             particle.sensor_reading(sonar_reading, self._map, self.sense_var)
             avg_prob += math.exp(particle.ln_p)
         avg_prob /= len(self._particles)
-        print(avg_prob)
 
         # sum of prob of robot location given each sensor reading
 
@@ -182,7 +181,6 @@ class ParticleFilter:
             particle.sensor_reading(sonar_reading, self._map, self.sense_var)
             avg_prob += math.exp(particle.ln_p)
         avg_prob /= len(self._particles)
-        print(avg_prob)
 
         # sum of prob of robot location given each sensor reading
 
