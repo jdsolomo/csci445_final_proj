@@ -30,9 +30,11 @@ class Run:
         pos_init = self.create.sim_get_position()
         # TODO identify good particle filter parameters
         self.pf = particle_filter.ParticleFilter(
-            self.mapJ, 500, 0.1, 0.05, 0.05)
+            self.mapJ, 3000, 0.1, 0.1, 0.05)
 
         self.joint_angles = np.zeros(7)
+        self.J_ONE_LEN = 0.4
+        self.J_TWO_LEN = 0.673
 
     def sleep(self, time_in_sec):
         """Sleeps for the specified amount of time while keeping odometry up-to-date
@@ -293,6 +295,71 @@ class Run:
             # Slight delay required
             self.time.sleep(0.01)
 
+    def go_to_point(self, x_init, z_init, output=True):
+
+        # change frame of reference
+        x = -x_init + 1.6
+        z = -z_init + 3.4
+
+        # precalculate r
+        r = np.sqrt(np.power(x, 2) + np.power(z, 2))
+
+        # Calculate angle 1
+        beta_num = np.power(r, 2) + self.J_ONE_LEN**2 - self.J_TWO_LEN**2
+        beta_den = 2 * self.J_ONE_LEN * r
+        beta = np.arccos(beta_num / beta_den)
+        if(x >= 0):
+            theta_1 = np.arctan2(z, x) + beta
+        else:
+            theta_1 = np.arctan2(z, x) - beta
+
+        # Calculate angle 2
+        alpha_num = self.J_ONE_LEN**2 + self.J_TWO_LEN**2 - np.power(r, 2)
+        alpha_den = 2 * self.J_ONE_LEN * self.J_TWO_LEN
+        alpha = np.arccos(alpha_num / alpha_den)
+        if(x <= 0):
+            theta_2 = - np.pi + alpha
+        else:
+            theta_2 = np.pi - alpha
+
+        # Display information
+        if (output):
+            print("Go to [{:.1f},{:.1f}] , IK: [{:.2f} deg, {:.2f} deg]".format(
+                x_init, z_init, np.degrees(theta_1), np.degrees(theta_2)))
+
+        # Move robotic arm
+        self.go_to_angle(np.degrees(theta_1), np.degrees(theta_2), False)
+
+    def go_to_angle(self, angle_1, angle_2, output=True):
+
+        # Convert angles to radians
+        angle_1_rad = np.deg2rad(angle_1)
+        angle_2_rad = np.deg2rad(angle_2)
+
+        # Transform absolute angles to robot's frame of reference angles
+        if(angle_1 >= 0):
+            adjusted_angle_1_rad = angle_1_rad - (np.pi / 2)
+        else:
+            adjusted_angle_1_rad = -1 * angle_1_rad - (np.pi / 2)
+
+        # Send movement commands to robot
+        self.arm.go_to(0, adjusted_angle_1_rad)
+        self.arm.go_to(3, angle_2_rad)
+        self.time.sleep(1)
+
+        # Calculate what point we should end at
+        x = self.J_ONE_LEN * \
+            np.cos(angle_1_rad) + self.J_TWO_LEN * \
+            np.cos(angle_1_rad + angle_2_rad)
+        z = self.J_ONE_LEN * \
+            np.sin(angle_1_rad) + self.J_TWO_LEN * \
+            np.sin(angle_1_rad + angle_2_rad) + 0.30  # Ground offset
+
+        # Display check data
+        if(output):
+            print("Go to {}, {} deg, FK: [{:.2f},{:.2f},{:.2f}]".format(
+                angle_1, angle_2, x, z, 0.32))
+
     def run(self):
         self.create.start()
         self.create.safe()
@@ -310,9 +377,9 @@ class Run:
             create2.Sensor.LeftEncoderCounts,
             create2.Sensor.RightEncoderCounts,
         ])
-        self.visualize()
-        self.virtual_create.enable_buttons()
-        self.visualize()
+        # self.visualize()
+        # self.virtual_create.enable_buttons()
+        # self.visualize()
 
         # self.arm.go_to(4, math.radians(-90))
         # self.time.sleep(4)
@@ -403,7 +470,7 @@ class Run:
 
                         # get particle with highest probability
                         pf_ind += 1
-                        if (1):
+                        if (pf_ind % 3 == 0):
                             self.pf.move_by(self.odometry.x,
                                             self.odometry.y, self.odometry.theta)
                             self.pf.measure(sonar_d)
@@ -446,7 +513,7 @@ class Run:
                         # distance = math.sqrt(math.pow(goal_x - best_estimate_x, 2) + math.pow(goal_y - best_estimate_y, 2))
                         if distance < 0.1 and p.state[0] != path[-1].state[0]:
                             break
-                        if distance < 0.005 and p.state[0] == path[-1].state[0]:
+                        if distance < 0.1 and p.state[0] == path[-1].state[0]:
                             print("Distance: ", distance)
                             self.create.drive_direct(0, 0)
                             self.time.sleep(1)
@@ -470,9 +537,26 @@ class Run:
             ## Place Glass on Shelf ##
             ##########################
 
-            self.pick_up()
-            self.time.sleep(1)
-            self.set_down(2)
+            # Leave room so arm doesn't knock over cup
+            self.arm.go_to(1, math.radians(80))
+            self.time.sleep(3)
+            self.arm.go_to(2, math.radians(-90))
+            self.time.sleep(3)
+            self.arm.go_to(6, math.radians(90))
+            self.time.sleep(3)
+            print("Moved to Start Location")
+
+            self.go_to_point(x_goal[0] / 100.0, (300 - x_goal[1]) / 100.0)
+            self.time.sleep(3)
+            # Bring grippers down around cup
+            self.arm.go_to(1, math.radians(90))
+            self.time.sleep(3)
+            self.arm.close_gripper()
+            self.time.sleep(6)
+
+            # self.pick_up()
+            # self.time.sleep(1)
+            # self.set_down(2)
 
             while(1):
                 pass
