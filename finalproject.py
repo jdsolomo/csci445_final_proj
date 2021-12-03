@@ -546,11 +546,18 @@ class Run:
             self.time.sleep(3)
             print("Moved to Start Location")
 
+            #inverse kinematics
             self.go_to_point(x_goal[0] / 100.0, (300 - x_goal[1]) / 100.0)
             self.time.sleep(3)
             # Bring grippers down around cup
             self.arm.go_to(1, math.radians(90))
             self.time.sleep(3)
+
+            # adjusts the gripper along the z axis to pick up the cup
+            self.arm.open_gripper()
+            self.arm.go_to(5, -math.pi/12)
+            self.time.sleep(1)
+
             self.arm.close_gripper()
             self.time.sleep(6)
 
